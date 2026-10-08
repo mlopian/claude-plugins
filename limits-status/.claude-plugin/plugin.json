@@ -1,0 +1,1 @@
+{ "name": "limits-status", "version": "0.2.0", "description": "Shows remaining rate-limit (5h / 7d) as colored bars above the prompt", "types": "./types/index.d.ts" }
