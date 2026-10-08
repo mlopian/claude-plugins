@@ -1,5 +1,8 @@
 {
   "name": "mlopian-plugins",
   "owner": { "name": "mlopian" },
-  "plugins": [{ "name": "limits-status", "source": "./limits-status" }]
+  "plugins": [
+    { "name": "limits-status", "source": "./limits-status" },
+    { "name": "session-panel", "source": "./session-panel" }
+  ]
 }
