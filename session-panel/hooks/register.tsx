@@ -169,13 +169,29 @@ async function showGitDiff($: EngineInterface, status: SessionGit, file: Session
   await update($, offset, () => 0)
 }
 
-let transcriptCache: { key: string; parsed: ReturnType<typeof parseTranscript> } | null = null
+const CHUNK_BYTES = 4 * 1024 * 1024
 
-// ponytail: re-parses the whole file whenever it grows; parse only the appended tail if mid-turn redraws lag
+let transcriptCache: { path: string; size: number; text: string; parsed: ReturnType<typeof parseTranscript> } | null = null
+
+// $.fs.read rejects and $.process.run truncates anything over 4 MiB, so long transcripts are read in slices
+async function readFrom($: EngineInterface, path: string, from: number, to: number): Promise<string> {
+  let text = ''
+  for (let offset = from; offset < to; offset += CHUNK_BYTES) {
+    const slice = await $.process.run(['sh', '-c', 'tail -c +"$1" "$2" | head -c "$3"', 'sh', String(offset + 1), path, String(CHUNK_BYTES)])
+    text += slice.stdout
+  }
+
+  return text
+}
+
+// ponytail: re-parses the whole text on every growth; parse incrementally if mid-turn redraws lag
 async function loadTranscript($: EngineInterface, path: string): Promise<ReturnType<typeof parseTranscript>> {
-  const stat = (await $.fs.exists(path)) ? await $.fs.stat(path) : null
-  const key = stat ? `${path}:${stat.size}:${stat.mtimeMs}` : path
-  if (transcriptCache?.key !== key) transcriptCache = { key, parsed: parseTranscript(stat ? await $.fs.read(path) : '') }
+  const size = (await $.fs.exists(path)) ? (await $.fs.stat(path)).size : 0
+  const cached = transcriptCache?.path === path && transcriptCache.size <= size ? transcriptCache : null
+  if (cached?.size === size) return cached.parsed
+
+  const text = (cached?.text ?? '') + (await readFrom($, path, cached?.size ?? 0, size))
+  transcriptCache = { path, size, text, parsed: parseTranscript(text) }
 
   return transcriptCache.parsed
 }
