@@ -1,6 +1,6 @@
 {
   "name": "session-panel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Side panel with the current session's usage, tool calls, changes, activity, scratch files and stats",
   "types": "./types/index.d.ts"
 }
