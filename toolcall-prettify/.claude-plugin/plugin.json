@@ -1,0 +1,5 @@
+{
+  "name": "toolcall-prettify",
+  "version": "0.1.0",
+  "description": "Readable Bash, Read and Edit tool calls: syntax-highlighted commands on a dark block, output in its own tinted block"
+}

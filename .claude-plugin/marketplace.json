@@ -3,6 +3,7 @@
   "owner": { "name": "mlopian" },
   "plugins": [
     { "name": "limits-status", "source": "./limits-status" },
-    { "name": "session-panel", "source": "./session-panel" }
+    { "name": "session-panel", "source": "./session-panel" },
+    { "name": "toolcall-prettify", "source": "./toolcall-prettify" }
   ]
 }
