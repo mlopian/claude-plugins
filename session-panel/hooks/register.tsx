@@ -169,8 +169,15 @@ async function showGitDiff($: EngineInterface, status: SessionGit, file: Session
   await update($, offset, () => 0)
 }
 
-async function readOr($: EngineInterface, path: string, fallback: string): Promise<string> {
-  return (await $.fs.exists(path)) ? $.fs.read(path) : fallback
+let transcriptCache: { key: string; parsed: ReturnType<typeof parseTranscript> } | null = null
+
+// ponytail: re-parses the whole file whenever it grows; parse only the appended tail if mid-turn redraws lag
+async function loadTranscript($: EngineInterface, path: string): Promise<ReturnType<typeof parseTranscript>> {
+  const stat = (await $.fs.exists(path)) ? await $.fs.stat(path) : null
+  const key = stat ? `${path}:${stat.size}:${stat.mtimeMs}` : path
+  if (transcriptCache?.key !== key) transcriptCache = { key, parsed: parseTranscript(stat ? await $.fs.read(path) : '') }
+
+  return transcriptCache.parsed
 }
 
 async function listOr($: EngineInterface, path: string): Promise<FsEntry[]> {
@@ -206,6 +213,11 @@ let maxOffset = 0
 let isListMode = false
 
 async function refreshLiveTab($: EngineInterface): Promise<void> {
+  const paths = await read($, pathsAtom)
+  if (paths && paths.id !== (await $.session.id())) {
+    const fresh = await sessionPaths($)
+    await update($, pathsAtom, () => fresh)
+  }
   const [current, panes] = await Promise.all([read($, tab), $.ui.panes()])
   if (!panes.some(pane => pane.id === PANE && pane.isShown)) return
   if (current === 'changes') await refreshGit($)
@@ -220,6 +232,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'session-panel',
+      immediate: true,
       description: 'Show the current session transcript, changes, activity, stats, environment and scratch directory in a side pane',
     })
     const paths = await sessionPaths($)
@@ -435,7 +448,7 @@ export const register: Register = on => {
       )
     }
 
-    const transcript = parseTranscript(await readOr($, paths.transcript, ''))
+    const transcript = await loadTranscript($, paths.transcript)
     const { meta } = transcript
 
     if (current === 'tools') {
