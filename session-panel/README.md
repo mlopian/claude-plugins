@@ -1,6 +1,6 @@
 # Session panel
 
-A side panel for browsing everything Claude Code knows about the current session: context and rate limits, every tool call with its full input and result, edited files with diffs, background activity, the session's scratch directory and usage statistics.
+A side panel for browsing everything Claude Code knows about the current session: context and rate limits, every tool call with its full input and result, edited files with diffs, background activity with each subagent's own tool calls, the session's scratch directory, files saved by tools and usage statistics.
 
 Open it with `/session-panel`.
 
@@ -24,8 +24,8 @@ Start a new Claude Code session after installing.
 | `u` | Usage | Session facts (title, ID, model, effort, permission mode, versions, branch, cost), rate limits, context fill with the `/context` grid, categories, memory files and tokens left before auto-compact, session paths, `session-env` contents |
 | `t` | Tool calls | One card per tool call, newest first: tool, status, start time, duration, description or file and the first three lines of input. `Enter` opens the call in full with syntax colouring |
 | `c` | Changes | `git status` of the session's repository with line counts, and the files Claude edited in this session with their backup versions. `Enter` opens a coloured diff |
-| `a` | Activity | Subagents and teammates with their status, and background task output files |
-| `f` | Files | Browser of the session's scratch directory, including pasted images |
+| `a` | Activity | Subagents and teammates with their status (Enter shows an agent's own tool calls), and background task output files |
+| `f` | Files | Browser of the session's scratch directory, plus files saved by tools (e.g. MCP screenshots) and pasted images |
 | `s` | Stats | Token totals, cache hit rate, turn durations, tool usage and the heaviest requests |
 | `h` | `?` | All keyboard shortcuts |
 

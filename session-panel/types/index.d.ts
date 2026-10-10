@@ -30,6 +30,7 @@ declare module 'claude-code' {
       diff: SessionDiff | null
       git: SessionGit | null
       paths: SessionPaths | null
+      agentView: { id: string; label: string } | null
     }
   }
 }

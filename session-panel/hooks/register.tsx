@@ -27,6 +27,7 @@ const listOffset = atom({ plugin: 'session-panel', key: 'listOffset' } as const,
 const diff = atom({ plugin: 'session-panel', key: 'diff' } as const, null as SessionDiff | null)
 const git = atom({ plugin: 'session-panel', key: 'git' } as const, null as SessionGit | null)
 const pathsAtom = atom({ plugin: 'session-panel', key: 'paths' } as const, null as SessionPaths | null)
+const agentView = atom({ plugin: 'session-panel', key: 'agentView' } as const, null as { id: string; label: string } | null)
 
 const TABS: { id: SessionTab; label: string; hotkey: string }[] = [
   { id: 'usage', label: 'Usage', hotkey: 'u' },
@@ -97,12 +98,14 @@ async function sessionPaths($: EngineInterface): Promise<SessionPaths> {
     $.env.get('HOME'),
     $.process.run(['id', '-u']),
   ])
-  const projectKey = cwd.replace(/[^a-zA-Z0-9]/g, '-')
+  const found = await $.process.run(['sh', '-c', 'ls -d "$1"/.claude/projects/*/"$2".jsonl 2>/dev/null | head -1', 'sh', home, id])
+  const transcript = found.stdout.trim() || `${home}/.claude/projects/${cwd.replace(/[^a-zA-Z0-9]/g, '-')}/${id}.jsonl`
+  const projectKey = transcript.split('/').at(-2)
 
   return {
     id,
     cwd,
-    transcript: `${home}/.claude/projects/${projectKey}/${id}.jsonl`,
+    transcript,
     env: `${home}/.claude/session-env/${id}`,
     tmp: `/tmp/claude-${uid.stdout.trim()}/${projectKey}/${id}`,
     fileHistory: `${home}/.claude/file-history/${id}`,
@@ -171,7 +174,7 @@ async function showGitDiff($: EngineInterface, status: SessionGit, file: Session
 
 const CHUNK_BYTES = 4 * 1024 * 1024
 
-let transcriptCache: { path: string; size: number; text: string; parsed: ReturnType<typeof parseTranscript> } | null = null
+const transcriptCache = new Map<string, { size: number; text: string; parsed: ReturnType<typeof parseTranscript> }>()
 
 // $.fs.read rejects and $.process.run truncates anything over 4 MiB, so long transcripts are read in slices
 async function readFrom($: EngineInterface, path: string, from: number, to: number): Promise<string> {
@@ -187,13 +190,15 @@ async function readFrom($: EngineInterface, path: string, from: number, to: numb
 // ponytail: re-parses the whole text on every growth; parse incrementally if mid-turn redraws lag
 async function loadTranscript($: EngineInterface, path: string): Promise<ReturnType<typeof parseTranscript>> {
   const size = (await $.fs.exists(path)) ? (await $.fs.stat(path)).size : 0
-  const cached = transcriptCache?.path === path && transcriptCache.size <= size ? transcriptCache : null
+  const previous = transcriptCache.get(path)
+  const cached = previous && previous.size <= size ? previous : null
   if (cached?.size === size) return cached.parsed
 
   const text = (cached?.text ?? '') + (await readFrom($, path, cached?.size ?? 0, size))
-  transcriptCache = { path, size, text, parsed: parseTranscript(text) }
+  const parsed = parseTranscript(text)
+  transcriptCache.set(path, { size, text, parsed })
 
-  return transcriptCache.parsed
+  return parsed
 }
 
 async function listOr($: EngineInterface, path: string): Promise<FsEntry[]> {
@@ -249,7 +254,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'session-panel',
       immediate: true,
-      description: 'Show the current session transcript, changes, activity, stats, environment and scratch directory in a side pane',
+      description: 'Show the current session transcript, changes, activity, stats, environment, scratch directory and tool result files in a side pane',
     })
     const paths = await sessionPaths($)
     await update($, pathsAtom, () => paths)
@@ -282,7 +287,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Code } = $.ui.resolve(e)
-    const [current, relative, paths, scrolled, errorsOnly, selectedId, savedListOffset, currentDiff, gitStatus] = await Promise.all([
+    const [current, relative, paths, scrolled, errorsOnly, selectedId, savedListOffset, currentDiff, gitStatus, viewedAgent] = await Promise.all([
       read($, tab),
       read($, dir),
       read($, pathsAtom),
@@ -292,6 +297,7 @@ export const register: Register = on => {
       read($, listOffset),
       read($, diff),
       read($, git),
+      read($, agentView),
       read($, tick),
     ])
     if (!paths) return <Text dimColor>Loading session paths...</Text>
@@ -365,6 +371,7 @@ export const register: Register = on => {
             onPress={async () => {
               await update($, tab, () => one.id)
               await update($, offset, () => 0)
+              await update($, agentView, () => null)
               if (one.id === 'changes') await refreshGit($)
             }}
           />
@@ -468,7 +475,10 @@ export const register: Register = on => {
     const { meta } = transcript
 
     if (current === 'tools') {
-      const selected = selectedId ? transcript.toolCalls.find(call => call.id === selectedId) : undefined
+      const shown = viewedAgent
+        ? await loadTranscript($, `${paths.transcript.replace(/\.jsonl$/, '')}/subagents/agent-${viewedAgent.id}.jsonl`)
+        : transcript
+      const selected = selectedId ? shown.toolCalls.find(call => call.id === selectedId) : undefined
 
       if (selected) {
         const status = statusOf(selected)
@@ -510,19 +520,32 @@ export const register: Register = on => {
         )
       }
 
-      const calls = transcript.toolCalls.filter(call => !errorsOnly || call.isError).reverse()
-      const errorCount = transcript.toolCalls.filter(call => call.isError).length
+      const calls = shown.toolCalls.filter(call => !errorsOnly || call.isError).reverse()
+      const errorCount = shown.toolCalls.filter(call => call.isError).length
       isListMode = true
       maxOffset = Math.max(0, calls.length - visibleCount)
       const first = Math.min(scrolled, maxOffset)
       const visibleCalls = calls.slice(first, first + visibleCount)
-      const position = calls.length === 0 ? '' : `${first + 1}-${first + visibleCalls.length} of ${calls.length}`
+      const range = calls.length === 0 ? '' : `${first + 1}-${first + visibleCalls.length} of ${calls.length}`
+      const position = viewedAgent ? `${viewedAgent.label}  ${range}` : range
 
       return (
         <Box flexDirection="column" height={bodyRows}>
           {tabRow}
           {actions(
           <>
+            {viewedAgent && (
+              <Button
+                key="session"
+                label="↰ Session"
+                hotkey="b"
+                onPress={async () => {
+                  await update($, agentView, () => null)
+                  await update($, tab, () => 'activity' as const)
+                  await update($, offset, () => 0)
+                }}
+              />
+            )}
             <Button key="up" label="▲" hotkey="k" onPress={() => scrollBy($, -page)} />
             <Button key="down" label="▼" hotkey="j" onPress={() => scrollBy($, page)} />
             <Button key="refresh" label="Refresh" hotkey="r" onPress={() => update($, tick, n => n + 1)} />
@@ -695,11 +718,16 @@ export const register: Register = on => {
               <Box flexDirection="column">
                 {agents.map(agent => (
                   <Box flexDirection="column">
-                    <Box flexDirection="row" columnGap={1}>
-                      <Text bold color={AGENT_COLORS[agent.status] ?? 'text'}>{`● ${agent.status}`}</Text>
+                    <Button key={`agent-${agent.id}`} plain onPress={async () => {
+                        await update($, agentView, () => ({ id: agent.id, label: `${agent.type}: ${agent.description}` }))
+                        await update($, selectedTool, () => null)
+                        await update($, tab, () => 'tools' as const)
+                        await update($, offset, () => 0)
+                      }}>
+                      <Text bold color={AGENT_COLORS[agent.status] ?? 'text'}>{`● ${agent.status}`}</Text>{' '}
                       <Text color="merged">{agent.type}</Text>
-                      {agent.name && <Text color="suggestion">{agent.name}</Text>}
-                    </Box>
+                      {agent.name && <Text color="suggestion">{` ${agent.name}`}</Text>}
+                    </Button>
                     <Box paddingLeft={2}>
                       <Text dimColor wrap="truncate-end">
                         {agent.description}
@@ -934,7 +962,31 @@ export const register: Register = on => {
     }
 
     const here = relative ? `${paths.tmp}/${relative}` : paths.tmp
-    const entries = sortEntries(await listOr($, here))
+    const toolResultsDir = `${paths.transcript.replace(/\.jsonl$/, '')}/tool-results`
+    const imagesDir = `${paths.tmp}/images`
+    const newestFiles = (list: FsEntry[]) => list.filter(entry => entry.kind !== 'dir').sort((a, b) => b.mtimeMs - a.mtimeMs)
+    const [entries, toolResults, images] = await Promise.all([
+      listOr($, here).then(sortEntries),
+      listOr($, toolResultsDir).then(newestFiles),
+      listOr($, imagesDir).then(newestFiles),
+    ])
+    const fileRow = (folder: string, entry: FsEntry) => (
+      <Box flexDirection="row" columnGap={1}>
+        <Text color={fileColor(entry.name)}>●</Text>
+        <Button
+          key={`file-${folder}/${entry.name}`}
+          plain
+          label={entry.name}
+          onPress={async () => {
+            const path = `${folder}/${entry.name}`
+            if (entry.name.toLowerCase().endsWith('.png')) await $.process.run(['open', path])
+            else await openInEditor($, path)
+          }}
+        />
+        <Text color="inactive">{formatSize(entry.size)}</Text>
+        <Text dimColor>{shortTime(entry.mtimeMs)}</Text>
+      </Box>
+    )
     const crumbs = ['scratchpad root', ...(relative ? relative.split('/') : [])]
 
     return frame(
@@ -948,9 +1000,11 @@ export const register: Register = on => {
           '▣ Scratch directory',
           'ide',
           <Box flexDirection="column">
-            <Text color="inactive" wrap="truncate-start">
-              {paths.tmp}
-            </Text>
+            <Button key="open-scratch" plain onPress={() => $.process.run(['open', here])}>
+              <Text color="inactive" wrap="truncate-start">
+                {paths.tmp}
+              </Text>
+            </Button>
             <Text>
               {crumbs.map((crumb, index) => (
                 <Text color={index === crumbs.length - 1 ? 'suggestion' : 'inactive'} bold={index === crumbs.length - 1}>
@@ -981,24 +1035,34 @@ export const register: Register = on => {
                 />
               </Box>
             ) : (
-              <Box flexDirection="row" columnGap={1}>
-                <Text color={fileColor(entry.name)}>●</Text>
-                <Button
-                  key={`file-${entry.name}`}
-                  plain
-                  label={entry.name}
-                  onPress={async () => {
-                    const path = `${here}/${entry.name}`
-                    if (entry.name.toLowerCase().endsWith('.png')) await $.process.run(['open', path])
-                    else await openInEditor($, path)
-                  }}
-                />
-                <Text color="inactive">{formatSize(entry.size)}</Text>
-                <Text dimColor>{shortTime(entry.mtimeMs)}</Text>
-              </Box>
+              fileRow(here, entry)
             ),
           )}
         </Box>
+        {
+          [
+            ['⧉ Tool results', toolResultsDir, toolResults, 'Tools have not saved any files yet.'] as const,
+            ['◩ Pasted images', imagesDir, images, 'No images pasted yet.'] as const,
+          ].map(([title, path, list, empty]) =>
+            section(
+              `${title} (${list.length})`,
+              'ide',
+              <Box flexDirection="column">
+                <Button key={`open-${path}`} plain onPress={() => $.process.run(['open', path])}>
+                  <Text color="inactive" wrap="truncate-start">
+                    {path}
+                  </Text>
+                </Button>
+                {list.length === 0 ? (
+                  <Text dimColor italic>
+                    {empty}
+                  </Text>
+                ) : (
+                  list.map(entry => fileRow(path, entry))
+                )}
+              </Box>,
+            ),
+          )}
         <Text color="inactive" italic>
           Enter opens a file in $EDITOR in a new herdr pane, a PNG in the system viewer.
         </Text>
