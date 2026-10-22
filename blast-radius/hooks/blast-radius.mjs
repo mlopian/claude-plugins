@@ -44,6 +44,7 @@ export function register(on) {
     let opened = { isPlaced: false };
     let decision;
     let summary = risk.label;
+    let failure = "";
     try {
       // Measure where the command will run: the session folder, moved by any
       // `cd dir &&` or `git -C dir` earlier in the same command line.
@@ -62,6 +63,12 @@ export function register(on) {
 
       const startedAt = await $.clock.now();
       while (mine.decision === null) {
+        const pane = (await $.ui.panes()).find((p) => p.id === PANE_ID);
+        const where = pane?.isPlaced && pane.isShown ? "pane" : "band";
+        if (where !== mine.where) {
+          mine.where = where;
+          $.ui.invalidate("ui.render");
+        }
         if (next.signal.aborted) {
           mine.decision = "interrupted";
           break;
@@ -72,16 +79,16 @@ export function register(on) {
         }
         await $.process.run(["sleep", POLL_SECONDS], { timeoutMs: 5000 });
       }
-    } catch {
+    } catch (error) {
+      failure = String(error?.message ?? error);
+      $.ui.log(`blast-radius: ${failure}`);
       mine.decision = "error"; // anything unexpected refuses the command
     } finally {
       decision = mine.decision;
       // Close this call's pane before releasing the hold, so the next call's
       // pane can't be the one that gets closed.
       try {
-        if (opened.isPlaced) {
-          await $.ui.close({ id: PANE_ID });
-        }
+        await $.ui.close({ id: PANE_ID });
       } catch {
         // the pane is already gone
       }
@@ -99,7 +106,7 @@ export function register(on) {
       cancel: "the user pressed Cancel",
       timeout: "no answer within 10 minutes",
       interrupted: "the turn was interrupted",
-      error: "Blast Radius hit an error while holding it",
+      error: `Blast Radius hit an error while holding it (${failure})`,
     }[decision] ?? "no answer was recorded";
     return {
       deny: `Blast Radius held this command and did not run it: ${why}. It would have: ${summary}. Do not retry it unless the user asks you to.`,
@@ -552,7 +559,7 @@ function paneRows(report) {
 function draw(t, state) {
   const { Box, Text, Button } = t;
   const { report } = state;
-  const list = report.lines.map((line, i) => Text({ key: `l${i}`, children: `  ${line}`, wrap: "truncate-end" }));
+  const list = report.lines.map((line, i) => Text({ key: `l${i}`, children: `  ${line}`, wrap: "wrap" }));
   if (report.more) {
     list.push(Text({ key: "more", dimColor: true, children: `  + ${report.more} more` }));
   }
@@ -569,7 +576,7 @@ function draw(t, state) {
     paddingX: 1,
     children: [
       Text({ key: "title", bold: true, color: "yellow", children: `⚠ Blast Radius · ${state.risk.label}` }),
-      Text({ key: "cmd", children: [Text({ dimColor: true, children: "Command  " }), Text({ bold: true, children: state.command })], wrap: "truncate-end" }),
+      Text({ key: "cmd", children: [Text({ dimColor: true, children: "Command  " }), Text({ bold: true, children: state.command })], wrap: "wrap" }),
       Text({ key: "sum", children: [Text({ dimColor: true, children: "Would    " }), Text({ color: "red", bold: true, children: report.summary })] }),
       Box({ key: "list", flexDirection: "column", marginTop: 1, children: list }),
       report.note ? Text({ key: "note", dimColor: true, italic: true, children: report.note, wrap: "wrap" }) : null,

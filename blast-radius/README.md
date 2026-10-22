@@ -22,7 +22,7 @@ Every other command runs as normal. If the command line moves first, with `cd di
 The patterns it demonstrates:
 
 - Holding a `tool.call` until the user answers, and returning `{ deny }` with a reason Claude can act on.
-- Drawing the same report in a `Pane`, or in the `AbovePrompt` band when the terminal is too narrow for a pane.
+- Drawing the same report in a `Pane`, or in the `AbovePrompt` band when the pane is not visible.
 - Measuring with `$.process.run`, passing paths as arguments so nothing in them runs as shell.
 
 ## Demo
@@ -57,7 +57,7 @@ The second try, after Proceed:
 - **Transcript:** not shared. The build ran in an internal workspace.
 - **Iterations:**
   - A hook has a 10-second budget for its own code, which is far too short to wait for a person. Time spent inside a `$` call doesn't count, so the hold is a loop that waits on `$.process.run(["sleep", "0.25"])` until a button's `onPress` sets the decision.
-  - A pane needs room. In a narrow terminal Claude Code doesn't place it, so the mod checks `isPlaced` and draws the report in the `AbovePrompt` band instead.
+  - A pane needs room. In a narrow terminal Claude Code doesn't place it, and a placed pane can be a tab behind another pane. While it holds a command, the mod reads `$.ui.panes()` on each poll and draws the report in the `AbovePrompt` band when its pane is not placed or not shown. Long lines wrap, so full paths stay readable in a narrow split.
   - Cancel has the focus when the pane opens, so pressing Enter refuses the command rather than running it.
   - An independent review before release found two problems in the measuring step, both fixed. A file named like a `find` action (for example `-delete`) that a glob matched could be read as an action while measuring, so relative paths now go to `find` with `./` in front. And a `cd` earlier on the command line was ignored, so the wrong folder was measured; the mod now follows `cd` and `git -C`. The same review led to smaller fixes: overlapping holds are queued, and the buttons always answer the command shown; an error while holding refuses the command; `git clean -e`, `src:dst` and `HEAD` force pushes are measured correctly; and sizes use `du -k`, which works on macOS as well as Linux.
   - Tested in Claude Code, before those fixes: `rm -rf build` was held for more than 30 seconds, Cancel kept the files and Proceed deleted them; `git reset --hard` listed the two changed files and Cancel kept them; `git clean -fdx` was held. Force pushes and migrations were checked against the command classifier only, not run. The fixes are covered by tests of the classifier, the measuring step and the hold queue, run with Node against a stand-in for Claude Code; they haven't been re-run in a live session.
@@ -68,7 +68,7 @@ The second try, after Proceed:
 
 - Claude Code 2.1.287 or later, where mods load by default. The mod was built and tested on 2.1.280, and `claude plugin validate` passes on 2.1.285.
 - `bash`, `git`, `find` and `du` on your `PATH`. For migrations, the project's own tool (for example `python3 manage.py showmigrations`).
-- For the side pane, a terminal about 144 columns wide or more. Narrower terminals get the band above the prompt.
+- For the side pane, a terminal about 144 columns wide or more. Narrower terminals, and a pane hidden behind another tab, get the band above the prompt.
 
 No environment variables or configuration.
 
