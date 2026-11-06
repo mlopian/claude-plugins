@@ -11,6 +11,9 @@ type Elements = ReturnType<EngineInterface['ui']['resolve']>
 type Call = { tool: string; input: unknown; isRunning: boolean; isErrored: boolean }
 
 const TINT = '#1c1c22'
+const PROMPT_TINT = '#ff8c00'
+const PROMPT_TEXT = '#000000'
+const PLACEHOLDER_TEXT = '#4a2000'
 const TOOLS = new Set(['Bash', 'Read', 'Edit'])
 
 function readRange(input: ReadInput): string {
@@ -95,6 +98,24 @@ function rowWidth(viewport: { columns: number } | undefined): number | undefined
 
 export const register: Register = on => {
   const commands = new Map<string, string>()
+
+  on('ui.render', { component: 'UserMessage' }, ($, e, next) => {
+    if (e.props.origin.kind !== 'composer') return next(e)
+    const { Box, Text } = $.ui.resolve(e)
+    const placeholders = e.props.text.match(/\[Image #\d+\]/g) ?? []
+
+    return (
+      <Box flexDirection="column" width={rowWidth(e.viewport)} backgroundColor={PROMPT_TINT} paddingX={2} paddingY={1} rowGap={1}>
+        <Box flexDirection="row" columnGap={1}>
+          <Text bold color={PROMPT_TEXT}>
+            ❯
+          </Text>
+          <Text color={PROMPT_TEXT}>{e.props.text}</Text>
+        </Box>
+        {placeholders.length ? <Text color={PLACEHOLDER_TEXT}>{placeholders.join('  ')}</Text> : null}
+      </Box>
+    )
+  })
 
   on('ui.render', { component: 'ToolUse' }, ($, e, next) => {
     if (!TOOLS.has(e.props.tool)) return next(e)

@@ -6,7 +6,7 @@ Claude Code mods (function-hook plugins).
 | --- | --- |
 | [`limits-status`](limits-status/) | Colored bars above the prompt with remaining rate limits and time to reset |
 | [`session-panel`](session-panel/) | Side panel with the session's usage, tool calls, changes, activity, scratch files and stats |
-| [`toolcall-prettify`](toolcall-prettify/) | Readable Bash, Read and Edit tool calls with syntax colouring and a separate output block |
+| [`toolcall-prettify`](toolcall-prettify/) | Readable Bash, Read and Edit tool calls with syntax colouring and a separate output block, and your prompts on an orange background |
 | [`blast-radius`](blast-radius/) | Holds risky shell commands (`rm -rf`, `find -delete`, `git reset --hard`, force push, migrations) and shows what they would change, with Proceed and Cancel |
 
 ## Requirements

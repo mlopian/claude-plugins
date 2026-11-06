@@ -7,6 +7,8 @@ Redraws Bash, Read and Edit tool calls in the transcript so it is clear what is 
 - Edit: the file path; the diff stays as Claude Code draws it.
 - Output sits in its own tinted block below the call. JSON and diffs are coloured, and so is a file printed with `cat`, `head`, `tail`, `bat` or `sed -n`. Stderr is red. Long output is cut at 40 lines.
 
+Your own prompts are drawn on an orange background with padding, so you can find them fast when you scroll. Image placeholders (`[Image #2]`) of a prompt are shown below its text.
+
 Groups made only of these tools (`Ran 3 shell commands`, `Read 2 files`) are drawn expanded. Groups with other tools are left to Claude Code.
 
 ## Install
